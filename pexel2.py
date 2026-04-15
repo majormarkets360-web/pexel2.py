@@ -14,11 +14,11 @@ import subprocess
 import tempfile
 import shutil
 import hashlib
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 
 # ---------- Page Configuration ----------
 st.set_page_config(
-    page_title="AI Video Creator Pro - Ultimate Video Generator",
+    page_title="AI Video Creator Pro - Complete Video Generator",
     page_icon="🎬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -39,26 +39,12 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 10px 20px rgba(0,0,0,0.2);
     }
-    .video-quality-badge {
+    .success-badge {
         background: #10b981;
         padding: 4px 12px;
         border-radius: 20px;
         font-size: 12px;
         display: inline-block;
-    }
-    .music-genre {
-        background: rgba(102, 126, 234, 0.2);
-        border: 1px solid #667eea;
-        border-radius: 10px;
-        padding: 8px;
-        margin: 5px;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.3s ease;
-    }
-    .music-genre:hover {
-        background: rgba(102, 126, 234, 0.4);
-        transform: scale(1.05);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -72,10 +58,6 @@ if 'generated_script' not in st.session_state:
     st.session_state.generated_script = None
 if 'current_topic' not in st.session_state:
     st.session_state.current_topic = None
-if 'selected_music' not in st.session_state:
-    st.session_state.selected_music = "energetic"
-if 'clip_sources' not in st.session_state:
-    st.session_state.clip_sources = []
 
 # ---------- Sidebar Configuration ----------
 st.sidebar.title("🎬 AI Video Creator Pro")
@@ -90,61 +72,28 @@ with st.sidebar.expander("🔐 API Keys", expanded=True):
     )
 
 with st.sidebar.expander("🎬 Video Settings", expanded=True):
-    video_duration = st.slider("Video Duration", 30, 90, 60, help="Target length in seconds")
-    video_quality = st.selectbox("Quality", ["1080p", "720p", "4K"], index=0)
-    num_clips = st.select_slider("Number of Clips", options=[4, 6, 8, 10, 12], value=8, help="More clips = more variety")
-    transition_style = st.selectbox("Transition Style", ["fade", "dissolve", "slide", "zoom"], index=0)
+    video_duration = st.slider("Video Duration", 30, 60, 60, help="Target length in seconds")
+    video_quality = st.selectbox("Quality", ["720p", "1080p"], index=1)
+    num_clips = st.select_slider("Number of Clips", options=[4, 6, 8], value=6, help="More clips = more variety")
     add_text_overlay = st.checkbox("Add Text Overlays", value=True)
-    add_background_music = st.checkbox("Add Background Music", value=True)
-
-with st.sidebar.expander("🎵 Music Settings", expanded=False):
-    st.markdown("### Background Music Options")
-    music_volume = st.slider("Music Volume", 0.1, 1.0, 0.3, help="Lower = better for voiceover")
-    
-    music_genres = {
-        "energetic": "🎸 Energetic/Upbeat",
-        "cinematic": "🎬 Cinematic/Epic",
-        "chill": "🌊 Chill/Lo-fi",
-        "corporate": "💼 Corporate/Inspirational",
-        "techno": "🎧 Electronic/Tech"
-    }
-    
-    selected_genre = st.radio("Music Genre", list(music_genres.keys()), format_func=lambda x: music_genres[x])
-    st.session_state.selected_music = selected_genre
-
-with st.sidebar.expander("📱 Auto-Post", expanded=False):
-    auto_post = st.checkbox("Auto-post to Twitter", value=False)
-    twitter_bearer = st.text_input("Twitter Bearer Token", type="password")
 
 st.sidebar.markdown("---")
-st.sidebar.info("💡 **Pro Tips:**\n- Use specific topics for better clips\n- More clips = smoother transitions\n- Background music auto-syncs to video length")
+st.sidebar.info("💡 **Get API Key:** pexels.com/api - It's free!")
 
-# ---------- Expanded Video Search Functions ----------
+# ---------- Core Functions ----------
 
-def search_videos_extensive(topic: str, api_key: str, max_clips: int = 12) -> List[Dict[str, Any]]:
-    """Search for videos from multiple related keywords for vast selection"""
+def search_videos(topic: str, api_key: str, max_clips: int = 8) -> List[str]:
+    """Search for videos on Pexels"""
     if not api_key:
         return []
     
-    # Create related keywords for broader search
-    related_keywords = [
-        topic,
-        f"{topic} cinematic",
-        f"{topic} 4k",
-        f"{topic} professional",
-        f"{topic} stock footage",
-        f"{topic} viral",
-        f"amazing {topic}",
-        f"{topic} background"
-    ]
-    
-    all_videos = []
-    seen_urls = set()
-    
     headers = {'Authorization': api_key.strip()}
     
-    # Search with multiple keywords for vast selection
-    for keyword in related_keywords[:5]:  # Limit to avoid rate limits
+    # Use multiple related keywords for better results
+    keywords = [topic, f"{topic} stock", f"{topic} footage"]
+    all_urls = []
+    
+    for keyword in keywords[:2]:  # Limit to avoid rate limits
         url = f'https://api.pexels.com/videos/search?query={keyword}&per_page={max_clips}&orientation=portrait'
         
         try:
@@ -155,8 +104,8 @@ def search_videos_extensive(topic: str, api_key: str, max_clips: int = 12) -> Li
                 for video in data.get('videos', []):
                     video_files = video.get('video_files', [])
                     
-                    # Get best quality based on selection
-                    target_height = 1080 if video_quality in ["1080p", "4K"] else 720
+                    # Get best quality
+                    target_height = 1080 if video_quality == "1080p" else 720
                     best_video = None
                     
                     for vf in video_files:
@@ -168,92 +117,57 @@ def search_videos_extensive(topic: str, api_key: str, max_clips: int = 12) -> Li
                         best_video = video_files[0]
                     
                     if best_video and best_video.get('link'):
-                        url_hash = hashlib.md5(best_video['link'].encode()).hexdigest()
-                        if url_hash not in seen_urls:
-                            seen_urls.add(url_hash)
-                            all_videos.append({
-                                'url': best_video['link'],
-                                'duration': video.get('duration', 5),
-                                'width': best_video.get('width', 1080),
-                                'height': best_video.get('height', 1920),
-                                'thumbnail': video.get('image', ''),
-                                'user': video.get('user', {}).get('name', 'Professional'),
-                                'keyword': keyword
-                            })
+                        all_urls.append(best_video['link'])
         except Exception as e:
             continue
     
-    # Shuffle for variety and return
-    random.shuffle(all_videos)
-    return all_videos[:max_clips]
+    # Remove duplicates and return
+    unique_urls = list(dict.fromkeys(all_urls))
+    return unique_urls[:max_clips]
 
-def get_background_music(genre: str, duration: int) -> Optional[str]:
-    """Get royalty-free background music URL based on genre"""
-    
-    # Royalty-free music sources (Pixabay, etc.)
-    music_library = {
-        "energetic": [
-            "https://cdn.pixabay.com/download/audio/2022/03/10/audio_c8c8f7c5c8.mp3",
-            "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1c5c8f7c5c.mp3",
-        ],
-        "cinematic": [
-            "https://cdn.pixabay.com/download/audio/2022/01/18/audio_dd6f0c5c8c.mp3",
-            "https://cdn.pixabay.com/download/audio/2022/03/15/audio_2f7c5c8c8c.mp3",
-        ],
-        "chill": [
-            "https://cdn.pixabay.com/download/audio/2022/06/25/audio_3e8f7c5c8c.mp3",
-            "https://cdn.pixabay.com/download/audio/2022/04/20/audio_4c5c8c8c8c.mp3",
-        ],
-        "corporate": [
-            "https://cdn.pixabay.com/download/audio/2022/08/01/audio_5f7c5c8c8c.mp3",
-            "https://cdn.pixabay.com/download/audio/2022/07/10/audio_6c5c8c8c8c.mp3",
-        ],
-        "techno": [
-            "https://cdn.pixabay.com/download/audio/2022/09/15/audio_7f7c5c8c8c.mp3",
-            "https://cdn.pixabay.com/download/audio/2022/10/05/audio_8c5c8c8c8c.mp3",
-        ]
-    }
-    
-    music_urls = music_library.get(genre, music_library["energetic"])
-    return random.choice(music_urls) if music_urls else None
+def download_video(url: str, filepath: str) -> bool:
+    """Download video with retry logic"""
+    for attempt in range(2):
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            response = requests.get(url, headers=headers, stream=True, timeout=45)
+            if response.status_code == 200:
+                with open(filepath, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=32768):
+                        f.write(chunk)
+                return True
+        except:
+            time.sleep(1)
+    return False
 
-def generate_enhanced_script(topic: str, duration: int) -> Dict[str, Any]:
-    """Generate detailed script with emotional arcs and hooks"""
+def generate_script(topic: str, duration: int = 60) -> Dict[str, Any]:
+    """Generate video script"""
     
-    # Calculate scenes based on duration
-    num_scenes = min(8, max(4, duration // 10))
+    # Calculate scenes
+    num_scenes = 6
     scene_duration = duration // num_scenes
     
-    # Hook templates based on emotional triggers
-    hooks = {
-        "curiosity": [f"🔍 The {topic} secret that's changing EVERYTHING...", f"🤔 What if everything you knew about {topic} was wrong?"],
-        "urgency": [f"⚠️ STOP SCROLLING! {topic.upper()} is going VIRAL now!", f"🚨 BREAKING: {topic} just hit record numbers!"],
-        "value": [f"💎 3 {topic} strategies that actually work in 2024", f"🎯 Master {topic} in just 60 seconds - here's how"],
-        "emotional": [f"❤️ This {topic} story will inspire you today", f"🌟 From zero to hero: The {topic} transformation"]
-    }
-    
-    all_hooks = hooks["curiosity"] + hooks["urgency"] + hooks["value"] + hooks["emotional"]
-    hook = random.choice(all_hooks)
-    
-    # Middle scene scripts
-    middle_scripts = [
-        f"Here's what the experts won't tell you about {topic}...",
-        f"The data shows {topic} is growing 300% faster than expected.",
-        f"Most people get {topic} completely wrong. Let me explain.",
-        f"This {topic} strategy could change everything for you.",
-        f"Watch closely - this is the most important {topic} insight.",
-        f"Why is {topic} suddenly everywhere? Here's the truth.",
-        f"The {topic} revolution is here - don't get left behind.",
-        f"Studies prove that {topic} works better than you think."
+    hooks = [
+        f"⚠️ STOP SCROLLING! {topic.upper()} is changing everything!",
+        f"🤯 The truth about {topic} that nobody tells you...",
+        f"🚨 BREAKING: {topic.upper()} just went VIRAL!",
+        f"💀 99% of people don't know this about {topic}"
     ]
     
-    # CTA templates
+    middle_texts = [
+        f"Here's what experts won't tell you about {topic}...",
+        f"The data shows {topic} is growing faster than ever.",
+        f"Most people get {topic} completely wrong.",
+        f"This {topic} secret could change everything.",
+        f"Watch closely - this is the most important part.",
+        f"Why is {topic} suddenly everywhere? Here's why."
+    ]
+    
     ctas = [
-        f"🚀 Ready to master {topic}? Hit follow for more!",
-        f"💬 Comment your thoughts on {topic} below!",
-        f"🔄 Share this with someone who needs to see it!",
-        f"⭐ Save this video for later - you'll thank me!",
-        f"🔔 Turn on notifications for daily {topic} tips!"
+        f"Want to master {topic}? Like and follow! 🚀",
+        f"Share this with someone who needs to see it!",
+        f"Comment your thoughts on {topic} below! 💬",
+        f"Follow for daily {topic} insights! 🔥"
     ]
     
     scenes = []
@@ -263,9 +177,7 @@ def generate_enhanced_script(topic: str, duration: int) -> Dict[str, Any]:
     scenes.append({
         "start": current_time,
         "end": current_time + scene_duration,
-        "text": hook,
-        "visual": "Dynamic attention-grabbing visuals",
-        "emotion": "excitement"
+        "text": random.choice(hooks)
     })
     current_time += scene_duration
     
@@ -274,9 +186,7 @@ def generate_enhanced_script(topic: str, duration: int) -> Dict[str, Any]:
         scenes.append({
             "start": current_time,
             "end": current_time + scene_duration,
-            "text": random.choice(middle_scripts),
-            "visual": f"Engaging {topic} content with smooth transitions",
-            "emotion": "informative"
+            "text": random.choice(middle_texts)
         })
         current_time += scene_duration
     
@@ -284,245 +194,168 @@ def generate_enhanced_script(topic: str, duration: int) -> Dict[str, Any]:
     scenes.append({
         "start": current_time,
         "end": duration,
-        "text": random.choice(ctas),
-        "visual": "Strong call to action with branding",
-        "emotion": "motivation"
+        "text": random.choice(ctas)
     })
     
     return {
         "topic": topic,
         "duration": duration,
-        "scenes": scenes,
-        "hook_type": random.choice(list(hooks.keys())),
-        "full_script": " ".join([s["text"] for s in scenes])
+        "scenes": scenes
     }
 
-def download_video_fast(url: str, filepath: str) -> bool:
-    """Fast video download with retry logic"""
-    for attempt in range(3):
-        try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'video/webm,video/mp4'
-            }
-            response = requests.get(url, headers=headers, stream=True, timeout=45)
-            if response.status_code == 200:
-                with open(filepath, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=65536):
-                        f.write(chunk)
-                return True
-        except:
-            time.sleep(1)
-    return False
-
-def create_smooth_transition(video_paths: List[str], output_path: str, transition: str = "fade") -> bool:
-    """Create smooth transitions between clips"""
+def create_video_simple(video_paths: List[str], output_path: str, duration: int) -> bool:
+    """Create video by concatenating clips"""
     
     if len(video_paths) < 2:
         return False
     
     try:
-        # Create filter complex for smooth transitions
-        filter_parts = []
-        inputs = []
+        # Create concat file
+        concat_file = os.path.join(os.path.dirname(output_path), "concat_list.txt")
+        with open(concat_file, 'w') as f:
+            for video in video_paths:
+                f.write(f"file '{video}'\n")
         
-        for i, video in enumerate(video_paths):
-            inputs.extend(['-i', video])
-            filter_parts.append(f'[{i}:v]')
+        # First, concatenate all videos
+        temp_concat = output_path.replace(".mp4", "_concat.mp4")
+        concat_cmd = [
+            'ffmpeg', '-y',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', concat_file,
+            '-c', 'copy',
+            temp_concat
+        ]
         
-        if transition == "fade":
-            # Fade transition between clips
-            filter_complex = ""
-            for i in range(len(video_paths) - 1):
-                filter_complex += f'[{i}:v]format=yuv420p,setpts=PTS-STARTPTS[v{i}];'
-            
-            for i in range(len(video_paths) - 1):
-                filter_complex += f'[v{i}][v{i+1}]xfade=transition=fade:duration=1:offset={i*3}[v{i+1}];'
-            
-            filter_complex += f'[v{len(video_paths)-1}]concat=n={len(video_paths)}:v=1:a=0[outv]'
-            
-            cmd = inputs + ['-filter_complex', filter_complex, '-map', '[outv]', '-y', output_path]
+        result = subprocess.run(concat_cmd, capture_output=True, text=True)
         
-        else:
-            # Simple concat for other transitions
-            concat_file = "concat_list.txt"
-            with open(concat_file, 'w') as f:
-                for video in video_paths:
-                    f.write(f"file '{video}'\n")
-            
-            cmd = ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', concat_file, '-c', 'copy', '-y', output_path]
+        if result.returncode != 0:
+            # Fallback: use filter complex
+            return False
         
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        return result.returncode == 0
+        # Then trim to exact duration
+        trim_cmd = [
+            'ffmpeg', '-y',
+            '-i', temp_concat,
+            '-t', str(duration),
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-movflags', '+faststart',
+            output_path
+        ]
+        
+        result = subprocess.run(trim_cmd, capture_output=True, text=True)
+        
+        # Cleanup
+        if os.path.exists(temp_concat):
+            os.remove(temp_concat)
+        if os.path.exists(concat_file):
+            os.remove(concat_file)
+        
+        return result.returncode == 0 and os.path.exists(output_path)
         
     except Exception as e:
-        st.warning(f"Transition error: {e}")
+        st.error(f"Video creation error: {str(e)[:100]}")
         return False
 
-def add_music_to_video(video_path: str, music_url: str, volume: float, output_path: str) -> bool:
-    """Add background music to video"""
-    try:
-        # Download music
-        music_file = "background_music.mp3"
-        response = requests.get(music_url, timeout=30)
-        if response.status_code == 200:
-            with open(music_file, 'wb') as f:
-                f.write(response.content)
-            
-            # Add music with volume control
-            cmd = [
-                'ffmpeg', '-i', video_path, '-i', music_file,
-                '-filter_complex', f'[1:a]volume={volume}[a];[0:a][a]amix=inputs=2:duration=first',
-                '-c:v', 'copy', '-y', output_path
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            os.remove(music_file)
-            return result.returncode == 0
-        
-        return False
-    except:
-        return False
-
-def add_text_overlay_smooth(video_path: str, text: str, output_path: str) -> bool:
-    """Add smooth text overlay to video"""
+def add_text_to_video(input_path: str, text: str, output_path: str) -> bool:
+    """Add text overlay to video"""
     try:
         # Escape special characters
-        safe_text = text.replace("'", "\\'").replace(":", "\\:").replace("!", "\\!")
+        safe_text = text.replace("'", "\\'").replace('"', '\\"').replace(":", "\\:")
         
-        # Create smooth text overlay with animation
-        filter_complex = (
-            f"drawtext=text='{safe_text}':fontcolor=white:fontsize=48:"
-            f"x=(w-text_w)/2:y=h-150:box=1:boxcolor=black@0.6:"
-            f"boxborderw=10:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        )
+        # Simple drawtext filter
+        filter_cmd = f"drawtext=text='{safe_text}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=h-100:box=1:boxcolor=black@0.6:boxborderw=10"
         
         cmd = [
-            'ffmpeg', '-i', video_path,
-            '-vf', filter_complex,
+            'ffmpeg', '-y',
+            '-i', input_path,
+            '-vf', filter_cmd,
             '-c:a', 'copy',
-            '-y', output_path
+            output_path
         ]
         
         result = subprocess.run(cmd, capture_output=True, text=True)
-        return result.returncode == 0
-    except:
+        return result.returncode == 0 and os.path.exists(output_path)
+        
+    except Exception as e:
+        st.warning(f"Text overlay failed: {str(e)[:50]}")
         return False
 
-def generate_ultimate_video(topic: str, api_key: str, duration: int, num_clips: int = 8) -> Optional[bytes]:
-    """Generate complete video with vast clip selection and music"""
+def generate_complete_video(topic: str, api_key: str, duration: int, num_clips: int) -> Optional[bytes]:
+    """Generate complete video"""
     
     temp_dir = tempfile.mkdtemp()
     downloaded_clips = []
     
     try:
-        # Progress tracking
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        # Step 1: Search for vast selection of clips
-        status_text.text("🔍 Searching for the best clips (multiple sources)...")
-        video_data = search_videos_extensive(topic, api_key, max_clips=num_clips)
+        # Step 1: Search for videos
+        status_text.text("🔍 Searching for video clips...")
+        video_urls = search_videos(topic, api_key, max_clips=num_clips)
         
-        if len(video_data) < 3:
-            st.error(f"Only found {len(video_data)} clips. Need at least 3 for good video.")
+        if len(video_urls) < 3:
+            st.error(f"Only found {len(video_urls)} clips. Need at least 3.")
             return None
         
-        st.success(f"✅ Found {len(video_data)} high-quality clips from multiple sources!")
-        progress_bar.progress(0.1)
+        st.success(f"✅ Found {len(video_urls)} clips!")
+        progress_bar.progress(0.2)
         
-        # Step 2: Download clips
-        status_text.text(f"📥 Downloading {len(video_data)} clips (this may take a moment)...")
-        for i, video in enumerate(video_data[:num_clips]):
-            clip_path = os.path.join(temp_dir, f"clip_{i:03d}.mp4")
-            if download_video_fast(video['url'], clip_path):
+        # Step 2: Download videos
+        status_text.text("📥 Downloading video clips...")
+        for i, url in enumerate(video_urls[:num_clips]):
+            clip_path = os.path.join(temp_dir, f"clip_{i}.mp4")
+            if download_video(url, clip_path):
                 downloaded_clips.append(clip_path)
-            progress_bar.progress(0.1 + (i / num_clips) * 0.3)
+            progress_bar.progress(0.2 + (i / num_clips) * 0.3)
         
-        if len(downloaded_clips) < 3:
+        if len(downloaded_clips) < 2:
             st.error("Failed to download enough clips")
             return None
         
-        # Step 3: Create smooth transitions
-        status_text.text("✨ Creating smooth transitions between clips...")
-        transition_video = os.path.join(temp_dir, "transitions.mp4")
+        # Step 3: Create video
+        status_text.text("🎬 Creating video...")
+        temp_video = os.path.join(temp_dir, "video.mp4")
         
-        if create_smooth_transition(downloaded_clips, transition_video, transition_style):
-            final_video = transition_video
-        else:
-            # Fallback to simple concat
-            concat_file = os.path.join(temp_dir, "concat.txt")
-            with open(concat_file, 'w') as f:
-                for clip in downloaded_clips:
-                    f.write(f"file '{clip}'\n")
-            
-            cmd = ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', concat_file, '-c', 'copy', '-y', transition_video]
-            subprocess.run(cmd, capture_output=True)
-            final_video = transition_video
+        if not create_video_simple(downloaded_clips, temp_video, duration):
+            st.error("Failed to create video")
+            return None
         
-        progress_bar.progress(0.6)
-        
-        # Step 4: Trim to exact duration
-        status_text.text(f"✂️ Trimming to exactly {duration} seconds...")
-        trimmed_video = os.path.join(temp_dir, "trimmed.mp4")
-        trim_cmd = [
-            'ffmpeg', '-i', final_video,
-            '-t', str(duration),
-            '-c:v', 'libx264',
-            '-c:a', 'aac',
-            '-y', trimmed_video
-        ]
-        subprocess.run(trim_cmd, capture_output=True)
-        final_video = trimmed_video
         progress_bar.progress(0.7)
         
-        # Step 5: Add background music
-        if add_background_music:
-            status_text.text("🎵 Adding background music that vibes with your video...")
-            music_url = get_background_music(st.session_state.selected_music, duration)
-            
-            if music_url:
-                music_video = os.path.join(temp_dir, "with_music.mp4")
-                if add_music_to_video(final_video, music_url, music_volume, music_video):
-                    final_video = music_video
-                    st.success("✅ Background music added!")
-            progress_bar.progress(0.8)
+        # Step 4: Add text overlay if enabled
+        final_video = temp_video
         
-        # Step 6: Add text overlays
         if add_text_overlay:
-            status_text.text("📝 Adding professional text overlays...")
+            status_text.text("📝 Adding text overlay...")
+            script = generate_script(topic, duration)
+            overlay_text = script['scenes'][0]['text'][:50]
             
-            # Generate script for overlays
-            script = generate_enhanced_script(topic, duration)
-            overlay_text = script['scenes'][0]['text'][:60]
-            
-            text_video = os.path.join(temp_dir, "with_text.mp4")
-            if add_text_overlay_smooth(final_video, overlay_text, text_video):
+            text_video = os.path.join(temp_dir, "video_with_text.mp4")
+            if add_text_to_video(temp_video, overlay_text, text_video):
                 final_video = text_video
-                st.success("✅ Text overlays added!")
+                st.session_state.generated_script = script
         
-        progress_bar.progress(0.95)
+        progress_bar.progress(0.9)
         
-        # Step 7: Finalize
-        status_text.text("🎬 Finalizing your masterpiece...")
+        # Step 5: Read final video
+        status_text.text("✅ Finalizing...")
         
-        if os.path.exists(final_video):
+        if os.path.exists(final_video) and os.path.getsize(final_video) > 0:
             with open(final_video, 'rb') as f:
                 video_bytes = f.read()
             
             progress_bar.progress(1.0)
-            status_text.text("✅ Video ready! 🎉")
-            
-            # Store script in session
-            st.session_state.generated_script = generate_enhanced_script(topic, duration)
-            st.session_state.clip_sources = video_data
+            status_text.text("✅ Video ready!")
             
             return video_bytes
         
         return None
         
     except Exception as e:
-        st.error(f"Video generation error: {e}")
+        st.error(f"Generation error: {str(e)}")
         return None
     finally:
         # Cleanup
@@ -534,102 +367,60 @@ def generate_ultimate_video(topic: str, api_key: str, duration: int, num_clips: 
 
 # ---------- Main UI ----------
 
-# Hero Section
+# Header
 st.markdown("""
 <div style="text-align: center; padding: 20px;">
-    <h1 style="font-size: 3em;">🎬 AI Video Creator Pro</h1>
-    <p style="font-size: 1.2em; color: #667eea;">Generate viral 60-second videos with AI + smooth background music</p>
+    <h1>🎬 AI Video Creator Pro</h1>
+    <p style="font-size: 18px; color: #667eea;">Generate complete 60-second videos automatically</p>
 </div>
 """, unsafe_allow_html=True)
 
-# Three column layout for better UX
+# Main content
 col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
-    # Topic Selection with categories
-    st.markdown("### 🎯 Choose Your Video Topic")
+    # Topic selection
+    st.markdown("### 🎯 Select Your Topic")
     
-    # Category tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["🔥 Trending", "💼 Business", "🎨 Creative", "⚡ Custom"])
+    # Quick topic buttons
+    quick_topics = [
+        "AI Technology", "Digital Marketing", "Fitness Motivation",
+        "Success Mindset", "Crypto News", "Productivity Hacks"
+    ]
     
-    with tab1:
-        trending_topics = [
-            "Artificial Intelligence", "Crypto News", "Space Exploration",
-            "Climate Change", "Mental Health", "Fitness Motivation"
-        ]
-        topic_cols = st.columns(2)
-        for i, topic in enumerate(trending_topics):
-            with topic_cols[i % 2]:
-                if st.button(f"📈 {topic}", key=f"trend_{i}", use_container_width=True):
-                    st.session_state.current_topic = topic
-                    st.rerun()
+    topic_cols = st.columns(3)
+    for i, topic in enumerate(quick_topics):
+        with topic_cols[i % 3]:
+            if st.button(f"🔥 {topic}", key=f"quick_{i}", use_container_width=True):
+                st.session_state.current_topic = topic
+                st.rerun()
     
-    with tab2:
-        business_topics = [
-            "Digital Marketing", "Entrepreneurship", "Sales Psychology",
-            "Brand Building", "Business Growth", "Leadership Skills"
-        ]
-        topic_cols = st.columns(2)
-        for i, topic in enumerate(business_topics):
-            with topic_cols[i % 2]:
-                if st.button(f"💼 {topic}", key=f"business_{i}", use_container_width=True):
-                    st.session_state.current_topic = topic
-                    st.rerun()
+    # Custom topic
+    custom_topic = st.text_input(
+        "Or enter your own topic:",
+        placeholder="e.g., Space exploration, Digital art, Mental health"
+    )
     
-    with tab3:
-        creative_topics = [
-            "Digital Art", "Video Editing", "Photography Tips",
-            "Graphic Design", "Creative Writing", "Music Production"
-        ]
-        topic_cols = st.columns(2)
-        for i, topic in enumerate(creative_topics):
-            with topic_cols[i % 2]:
-                if st.button(f"🎨 {topic}", key=f"creative_{i}", use_container_width=True):
-                    st.session_state.current_topic = topic
-                    st.rerun()
-    
-    with tab4:
-        custom_topic = st.text_input(
-            "Enter your topic:",
-            placeholder="e.g., How to start a successful podcast",
-            key="custom_input"
-        )
-        if custom_topic and st.button("Use This Topic", use_container_width=True):
-            st.session_state.current_topic = custom_topic
-            st.rerun()
+    if custom_topic:
+        st.session_state.current_topic = custom_topic
     
     # Display selected topic
     if st.session_state.current_topic:
-        st.success(f"🎬 **Selected Topic:** {st.session_state.current_topic}")
+        st.success(f"✅ **Selected:** {st.session_state.current_topic}")
         
-        # API key check
         if not pexels_api_key:
             st.error("⚠️ Please enter your Pexels API key in the sidebar")
         else:
-            # Show video preview settings
-            st.markdown("---")
-            st.markdown("### 🎬 Video Generation Settings")
-            
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.metric("Target Duration", f"{video_duration} seconds")
-                st.metric("Video Quality", video_quality)
-                st.metric("Number of Clips", f"{num_clips} clips")
-            with col_b:
-                st.metric("Transition", transition_style.title())
-                st.metric("Music Genre", st.session_state.selected_music.title())
-                st.metric("Text Overlays", "Enabled" if add_text_overlay else "Disabled")
-            
             # Generate button
-            if st.button("🚀 GENERATE ULTIMATE VIDEO", type="primary", use_container_width=True):
+            if st.button("🎬 GENERATE 60-SECOND VIDEO", type="primary", use_container_width=True):
                 
-                # Generate video
-                video_bytes = generate_ultimate_video(
-                    st.session_state.current_topic,
-                    pexels_api_key,
-                    video_duration,
-                    num_clips
-                )
+                with st.spinner("🎬 Generating your video... (this takes 1-2 minutes)"):
+                    video_bytes = generate_complete_video(
+                        st.session_state.current_topic,
+                        pexels_api_key,
+                        video_duration,
+                        num_clips
+                    )
                 
                 if video_bytes:
                     st.session_state.final_video_bytes = video_bytes
@@ -639,104 +430,56 @@ with col2:
                     st.markdown("### 🎥 Your Generated Video")
                     st.video(video_bytes)
                     
-                    # Download section
-                    col_d1, col_d2 = st.columns(2)
-                    with col_d1:
-                        filename = f"{st.session_state.current_topic.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-                        st.download_button(
-                            label="📥 Download Video (MP4)",
-                            data=video_bytes,
-                            file_name=filename,
-                            mime="video/mp4",
-                            use_container_width=True
-                        )
+                    # Download button
+                    filename = f"{st.session_state.current_topic.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+                    st.download_button(
+                        label="📥 Download Video (MP4)",
+                        data=video_bytes,
+                        file_name=filename,
+                        mime="video/mp4",
+                        use_container_width=True
+                    )
                     
-                    with col_d2:
-                        if auto_post and twitter_bearer:
-                            if st.button("🐦 Post to Twitter Now", use_container_width=True):
-                                st.success("✅ Posted to Twitter successfully!")
-                    
-                    # Show script
-                    with st.expander("📝 View Generated Script"):
-                        script = st.session_state.generated_script
-                        if script and 'scenes' in script:
-                            for scene in script['scenes']:
+                    # Display script
+                    if st.session_state.generated_script:
+                        with st.expander("📝 View Generated Script"):
+                            for scene in st.session_state.generated_script['scenes']:
                                 st.markdown(f"**⏱️ {scene['start']:.0f}-{scene['end']:.0f}s**")
                                 st.write(f"📖 {scene['text']}")
-                                st.write(f"🎬 {scene['visual']}")
                                 st.markdown("---")
                     
-                    # Show clip sources
-                    with st.expander("🎬 Video Sources Used"):
-                        for i, clip in enumerate(st.session_state.clip_sources[:num_clips]):
-                            st.markdown(f"**Clip {i+1}:** {clip.get('user', 'Professional')} - {clip.get('keyword', 'Stock footage')}")
-                    
-                    # Success celebration
+                    # Success message
                     st.balloons()
                     st.markdown("""
                     <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); 
-                                border-radius: 15px; padding: 25px; text-align: center; margin-top: 20px;">
-                        <h2 style="color: white;">🎉 Video Generated Successfully!</h2>
-                        <p style="color: white; font-size: 16px;">
-                            Your {video_duration}-second video with {num_clips} clips + background music is ready!
-                        </p>
+                                border-radius: 10px; padding: 20px; text-align: center;">
+                        <h3 style="color: white;">🎉 Video Generated Successfully!</h3>
+                        <p style="color: white;">Your 60-second video is ready to download and share!</p>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
                     st.error("❌ Failed to generate video. Please try again with a different topic.")
     
     # Help section
-    with st.expander("ℹ️ How It Works - Ultimate Guide"):
+    with st.expander("ℹ️ How It Works"):
         st.markdown("""
-        ### 🎬 **Complete Video Generation System**
+        1. **Get your free Pexels API key** from pexels.com/api
+        2. **Enter the key** in the sidebar
+        3. **Select a topic** (trending or custom)
+        4. **Click Generate** and wait 1-2 minutes
+        5. **Download** your complete 60-second MP4 video
         
-        **Step 1: Select Your Topic**
-        - Choose from trending topics or enter custom
-        - System searches 5+ related keywords for vast clip selection
-        
-        **Step 2: Configure Settings**
-        - **Duration:** 30-90 seconds (optimized for viral content)
-        - **Quality:** 720p, 1080p, or 4K
-        - **Clips:** 4-12 clips for smooth variety
-        - **Music:** 5 genres with volume control
-        
-        **Step 3: AI Generation**
-        - Searches multiple video sources simultaneously
-        - Downloads 4-12 high-quality clips
-        - Creates smooth transitions between clips
-        - Adds background music that matches video energy
-        - Overlays professional text captions
-        
-        **Step 4: Export & Share**
-        - Download ready-to-post MP4 video
-        - Auto-post to Twitter (optional)
-        - Share across all social platforms
-        
-        ### 🎵 **Background Music Library**
-        - **Energetic:** Upbeat, motivational tracks
-        - **Cinematic:** Epic, inspiring scores
-        - **Chill:** Lo-fi, relaxed vibes
-        - **Corporate:** Professional, clean music
-        - **Techno:** Modern, electronic beats
-        
-        ### 📊 **Quality Features**
-        - 4K/1080p/720p options
-        - Smooth fade/dissolve/slide/zoom transitions
-        - Professional text overlays
-        - Volume-balanced audio
-        - Optimized for TikTok/Reels/Shorts
+        **Requirements:**
+        - Pexels API key (free)
+        - Internet connection
+        - FFmpeg (auto-installed on Streamlit Cloud)
         """)
 
 # Footer
 st.markdown("---")
 st.markdown("""
-<div style="text-align: center; padding: 20px;">
-    <p>🎬 <strong>AI Video Creator Pro - Ultimate Edition</strong></p>
-    <p style="font-size: 12px; color: #666;">
-        Vast clip selection • Smooth background music • Professional transitions • Ready-to-post videos
-    </p>
-    <p style="font-size: 12px; color: #999;">
-        Powered by Pexels + FFmpeg • Royalty-free music • Production-ready output
-    </p>
+<div style="text-align: center; color: #666; padding: 20px;">
+    <p>🎬 <strong>AI Video Creator Pro</strong> | Complete 60-Second Video Generation</p>
+    <p style="font-size: 12px;">Powered by Pexels + FFmpeg | Creates ready-to-share MP4 videos</p>
 </div>
 """, unsafe_allow_html=True)
